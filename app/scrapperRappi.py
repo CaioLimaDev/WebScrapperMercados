@@ -4,8 +4,7 @@ import re
 import pandas as pd
 import math
 
-urls=['lojas/900315281-pao-de-azucar','lojas/900037048-moreira','900036589-carrefour-hiper-super-market']
-
+urlsRappi=['lojas/900315281-pao-de-azucar','lojas/900037048-moreira','900036589-carrefour-hiper-super-market']
 urlRappi = f'https://www.rappi.com.br/'
 headers = {'User-agent':"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
     (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"}
@@ -15,7 +14,7 @@ def requisicao(url, header):
     soup = BeautifulSoup(site.content, 'html.parser')
     return soup
 
-for url in urls:
+for url in urlsRappi:
     urlDefault = urlRappi+url
     leftMenus = requisicao(urlDefault, headers).find('ul', attrs={"data-qa": "corridor-list"})
 
