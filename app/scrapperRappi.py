@@ -2,9 +2,8 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import pandas as pd
-import math
 
-urlsRappi=['lojas/900315281-pao-de-azucar','lojas/900037048-moreira','900036589-carrefour-hiper-super-market']
+urlsRappi=['lojas/900140342-carrefour-hiper-super-market']
 urlRappi = f'https://www.rappi.com.br/'
 headers = {'User-agent':"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
     (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"}
@@ -41,6 +40,7 @@ for url in urlsRappi:
                     produtosList['preco'].append(preco)
                     produtosList['nome'].append(nome)
                     produtosList['descricao'].append(descricao)
+                    print(produtosList)
 
     df = pd.DataFrame(produtosList)
     df.to_csv(f'rappi_{url.replace("/", "_")}.csv', encoding='utf-8', sep=';', index=False)
