@@ -1,11 +1,9 @@
 import time
-
 import requests
 from bs4 import BeautifulSoup
 import re
 import pandas as pd
 import concurrent.futures
-
 
 rappi_root = f'https://www.rappi.com.br/'
 headers = {
@@ -19,52 +17,71 @@ def extrair_html(url, header):
 
 
 def getMercados():
+    mercados = {
+        'nomeMercado': [],
+        'imagemMercado': []
+    }
     urlsRappi = []
     mercadosBuscados = set()
     pagina_mercados = extrair_html('https://www.rappi.com.br/lojas/tipo/supermercados', headers)
     container_mercados = pagina_mercados.find('div', attrs={"data-qa": "stores-container"})
-
     linksMercados = container_mercados.find_all('a', attrs={"data-qa": re.compile(r'store-card-')})
 
     for link in linksMercados:
         nome_mercado = link.find('h3').get_text()
+        imagem_mercado = link.find('img').get('src')
+
+        mercados['nomeMercado'].append(nome_mercado)
+        mercados['imagemMercado'].append(imagem_mercado)
+
         if nome_mercado not in mercadosBuscados:
             urlsRappi.append(link.get('href'))
             mercadosBuscados.add(nome_mercado)
 
+    mr = pd.DataFrame(mercados)
+    mr.to_csv(f'mercados.csv', encoding='utf-8', sep=';', index=False)
+
     return urlsRappi
+
 
 def buscar_produtos(url):
     start_time = time.perf_counter()
 
     urlDefault = rappi_root + url
-    leftMenus = extrair_html(urlDefault, headers).find('ul', attrs={"data-qa": "corridor-list"})
+    leftMenus = extrair_html(urlDefault, headers).find_all('ul', attrs={"data-qa": "corridor-list"})
 
-    produtosList = {'nome': [], 'preco': [], 'descricao': []}
+    produtosList = {
+        'nome': [],
+        'preco': [],
+        'descricao': [],
+        'imagemProduto': [],
+    }
 
     if leftMenus:
-        for leftMenu in leftMenus.find_all('li'):
-            leftMenuHref = leftMenu.find('a').get('href')
-            newUrl = rappi_root + leftMenuHref
+        for leftMenu in leftMenus:
+            for leftMenuHref in leftMenu.find_all('a'):
+                newUrl = rappi_root + leftMenuHref.get('href')
 
-            verMaisList = extrair_html(newUrl, headers).find_all(
-                attrs={'data-qa': re.compile(r'store-corridors-list-aisle.*')})
+                verMaisList = extrair_html(newUrl, headers).find_all(
+                    attrs={'data-qa': re.compile(r'store-corridors-list-aisle.*')})
 
-            for verMais in verMaisList:
-                links = verMais.find('a').get('href')
-                urlVerMais = rappi_root + links
+                for verMais in verMaisList:
+                    links = verMais.find('a').get('href')
+                    urlVerMais = rappi_root + links
 
-                paginasVerMais = extrair_html(urlVerMais, headers).find_all(
-                    attrs={'data-qa': re.compile(r'product-item.*')})
+                    paginasVerMais = extrair_html(urlVerMais, headers).find_all(
+                        attrs={'data-qa': re.compile(r'product-item.*')})
 
-                for pagina in paginasVerMais:
-                    preco = pagina.find(attrs={'data-qa': 'product-price'}).text.strip()
-                    nome = pagina.find(attrs={'data-qa': 'product-name'}).text.strip()
-                    descricao = pagina.find(attrs={'data-qa': 'product-description'}).text.strip()
+                    for pagina in paginasVerMais:
+                        preco = pagina.find(attrs={'data-qa': 'product-price'}).text.strip()
+                        nome = pagina.find(attrs={'data-qa': 'product-name'}).text.strip()
+                        descricao = pagina.find(attrs={'data-qa': 'product-description'}).text.strip()
+                        imagem = pagina.find('img').get('src')
 
-                    produtosList['preco'].append(preco)
-                    produtosList['nome'].append(nome)
-                    produtosList['descricao'].append(descricao)
+                        produtosList['preco'].append(preco)
+                        produtosList['nome'].append(nome)
+                        produtosList['descricao'].append(descricao)
+                        produtosList['imagemProduto'].append(imagem)
 
     df = pd.DataFrame(produtosList)
     df.to_csv(f'rappi_{url.replace("/", "_")}.csv', encoding='utf-8', sep=';', index=False)
@@ -73,7 +90,8 @@ def buscar_produtos(url):
     print(f"Tempo para buscar o mercado {url}: {end_time - start_time} segundos")
 
 
-urlsRappi = getMercados()
+if __name__ == '__main__':
+    urlsRappi = getMercados()
 
-with concurrent.futures.ThreadPoolExecutor() as executor:
-    executor.map(buscar_produtos, urlsRappi)
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        executor.map(buscar_produtos, urlsRappi)
