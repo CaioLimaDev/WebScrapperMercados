@@ -1,30 +1,31 @@
 import time
-import requests
+from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 import re
 import pandas as pd
 import concurrent.futures
 
-rappi_root = f'https://www.rappi.com.br/'
+rappi_root = 'https://www.rappi.com.br/'
 headers = {
-    'User-agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)"
-                  " Chrome/124.0.0.0 Safari/537.36"}
+    'User-agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+}
 
-
-def extrair_html(url, header):
-    start_time = time.perf_counter()
-    site = requests.get(url, headers=header)
-    end_time = time.perf_counter()
-    tempo_extracao = end_time - start_time
-    soup = BeautifulSoup(site.content, 'html.parser')
-    return soup
-
+def extrair_html(url):
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)
+        page = browser.new_page()
+        page.set_extra_http_headers(headers)
+        page.goto(url)
+        page.wait_for_load_state('networkidle')
+        content = page.content()
+        browser.close()
+        return BeautifulSoup(content, 'html.parser')
 
 def getMercados():
     start_time = time.perf_counter()
     urlsRappi = []
     mercadosBuscados = set()
-    pagina_mercados = extrair_html('https://www.rappi.com.br/lojas/tipo/supermercados', headers)
+    pagina_mercados = extrair_html('https://www.rappi.com.br/lojas/tipo/supermercados')
     container_mercados = pagina_mercados.find('div', attrs={"data-qa": "stores-container"})
     linksMercados = container_mercados.find_all('a', attrs={"data-qa": re.compile(r'store-card-')})
 
@@ -37,7 +38,6 @@ def getMercados():
     end_time = time.perf_counter()
     tempo_total_mercados = end_time - start_time
     print(f"Tempo para buscar os links: {tempo_total_mercados} segundos")
-    print(f"")
     return urlsRappi, tempo_total_mercados
 
 def converter_preco(preco):
@@ -48,15 +48,14 @@ def converter_preco(preco):
 
 def buscar_produtos(url):
     start_time = time.perf_counter()
-
     urlDefault = rappi_root + url
-    paginas = extrair_html(urlDefault, headers)
+    paginas = extrair_html(urlDefault)
     leftMenus = paginas.find_all('ul', attrs={"data-qa": "corridor-list"})
 
     mercadoVinculado = paginas.find('h1', attrs={"data-qa": "store-name"})
-    imagemMercado = paginas.find('img', alt=mercadoVinculado.text.strip()).get('src') if mercadoVinculado else None
+    imagemMercado = paginas.find('img', alt=mercadoVinculado.text.strip()) if mercadoVinculado else None
     mercadoVinculado = mercadoVinculado.text.strip() if mercadoVinculado else None
-
+    imagemMercadoSrc = imagemMercado["src"] if imagemMercado else None
     produtosList = {
         'nome': [],
         'preco': [],
@@ -76,7 +75,7 @@ def buscar_produtos(url):
                 categoria = leftMenuHref.text.strip()
 
                 try:
-                    paginasVerMais = extrair_html(newUrl, headers)
+                    paginasVerMais = extrair_html(newUrl)
                     verMaisList = paginasVerMais.find_all(
                         attrs={'data-qa': re.compile(r'store-corridors-list-aisle.*')})
 
@@ -85,7 +84,7 @@ def buscar_produtos(url):
                             links = verMais.find('a').get('href')
                             urlVerMais = rappi_root + links
 
-                            paginasVerMais = extrair_html(urlVerMais, headers)
+                            paginasVerMais = extrair_html(urlVerMais)
                             paginasVerMais = paginasVerMais.find_all(
                                 attrs={'data-qa': re.compile(r'product-item.*')})
 
@@ -96,8 +95,8 @@ def buscar_produtos(url):
                                     preco = pagina.find(attrs={'data-qa': 'product-price'}).text.strip()
                                     nome = pagina.find(attrs={'data-qa': 'product-name'}).text.strip()
                                     descricao = pagina.find(attrs={'data-qa': 'product-description'}).text.strip()
-                                    imagem = pagina.find(attrs={'data-testid': 'image'}).get('src')
-
+                                    imagemElement = pagina.find(attrs={'data-testid': 'image'})
+                                    imagem = imagemElement["src"] if imagemElement else None
                                     if "/" in preco:
                                         valor, unidade = preco.split("/")
                                         valor = converter_preco(valor)
@@ -111,7 +110,7 @@ def buscar_produtos(url):
                                     produtosList['descricao'].append(descricao)
                                     produtosList['imagemProduto'].append(imagem)
                                     produtosList['mercadoVinculado'].append(mercadoVinculado)
-                                    produtosList['imagemMercado'].append(imagemMercado)
+                                    produtosList['imagemMercado'].append(imagemMercadoSrc)
                                     produtosList['subcategoria'].append(subcategoriaProdutos)
                                     produtosList['categoria'].append(categoria)
 
@@ -130,12 +129,11 @@ def buscar_produtos(url):
     print(f"Tempo para buscar os produtos {url}: {tempo_total} segundos")
     return tempo_total
 
-
 if __name__ == '__main__':
     urlsRappi, tempo_total_mercados = getMercados()
 
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        tempos = executor.map(buscar_produtos, urlsRappi)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:  # Ajuste o número de workers conforme necessário
+        tempos = list(executor.map(buscar_produtos, urlsRappi))
 
     tempo_total_requisicoes = sum(tempos) + tempo_total_mercados
     print(f"Tempo total: {tempo_total_requisicoes} segundos")
