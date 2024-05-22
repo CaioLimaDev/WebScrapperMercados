@@ -10,16 +10,23 @@ headers = {
     'User-agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 }
 
+
 def extrair_html(url):
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
+        browser = p.chromium.launch(headless=True)
         page = browser.new_page()
         page.set_extra_http_headers(headers)
         page.goto(url)
-        page.wait_for_load_state('networkidle')
+        try:
+            page.wait_for_selector('data-testid=image')
+            page.wait_for_timeout(50000)
+        except:
+            print(f"Timeout reached for {url}, proceeding with the current state of the page.")
+
         content = page.content()
         browser.close()
         return BeautifulSoup(content, 'html.parser')
+
 
 def getMercados():
     start_time = time.perf_counter()
